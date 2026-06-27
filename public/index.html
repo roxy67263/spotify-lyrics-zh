@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spotify 歌詞翻譯</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="player">
+        <div class="cover-wrap">
+          <img id="cover" class="cover" alt="" />
+          <div id="coverFallback" class="cover-fallback">♪</div>
+        </div>
+
+        <div class="track-panel">
+          <div class="topbar">
+            <div>
+              <p id="status" class="status">正在檢查設定...</p>
+              <h1 id="title">Spotify 歌詞翻譯</h1>
+              <p id="artist" class="artist">登入後會自動偵測你正在播放的歌曲。</p>
+            </div>
+            <a id="login" class="button" href="/login">登入 Spotify</a>
+          </div>
+
+          <div>
+            <div class="progress">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <p id="phoneHint" class="phone-hint">手機網址會在這裡顯示。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lyrics-card">
+        <div class="card-head">
+          <h2>同步歌詞</h2>
+          <span id="source">-</span>
+        </div>
+        <div id="syncedLyrics" class="synced-lyrics">
+          <p class="empty">等待歌曲...</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

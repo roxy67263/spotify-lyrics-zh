@@ -1,0 +1,12 @@
+{
+  "name": "spotify-lyrics-zh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Spotify now-playing lyrics translator.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
