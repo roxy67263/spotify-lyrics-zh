@@ -70,6 +70,19 @@ async function refresh() {
 }
 
 function renderPhoneHint(config) {
+  const host = window.location.hostname;
+  const isLocal =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.startsWith("192.168.") ||
+    host.startsWith("10.") ||
+    host.startsWith("172.");
+
+  if (!isLocal) {
+    els.phoneHint.textContent = `手機或外網開：${window.location.origin}`;
+    return;
+  }
+
   const urls = config.lanUrls || [];
   if (!urls.length) {
     els.phoneHint.textContent = "手機和電腦連同一個 Wi-Fi 後，用電腦 IP 開啟這個 App。";
