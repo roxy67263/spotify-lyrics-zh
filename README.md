@@ -72,4 +72,5 @@ https://spotify-lyrics-zh.onrender.com/callback
 - Spotify 官方 Web API 可以取得目前播放歌曲，但不提供歌詞。
 - 歌詞來源使用 LRCLIB；有些歌曲可能找不到歌詞。
 - 如果 LRCLIB 有同步歌詞，App 會跟著 Spotify 播放進度高亮目前句子。
+- 每個瀏覽器都有自己的 Spotify 登入狀態，不同使用者不會互相覆蓋。
 - 翻譯目前使用免金鑰的 Google Translate 網路端點，適合個人 MVP。長期穩定使用建議改接正式翻譯 API。

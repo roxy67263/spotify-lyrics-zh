@@ -14,14 +14,14 @@ const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${POR
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || CLIENT_SECRET || "local-dev-secret";
 const APP_COOKIE = "spotify_lyrics_app";
+const SESSION_COOKIE = "spotify_lyrics_sid";
 const SCOPE = "user-read-currently-playing user-read-playback-state";
 
 const publicDir = path.join(__dirname, "public");
 const spotifyAccounts = "https://accounts.spotify.com";
 const spotifyApi = "https://api.spotify.com/v1";
 
-let authState = "";
-let tokenSet = null;
+const sessions = new Map();
 const lyricCache = new Map();
 const translationCache = new Map();
 
@@ -60,59 +60,81 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { error: "missing_spotify_credentials" }, 500);
       }
 
-      authState = crypto.randomBytes(16).toString("hex");
+      const { session, cookie } = getOrCreateSession(req);
+      session.authState = crypto.randomBytes(16).toString("hex");
       const params = new URLSearchParams({
         response_type: "code",
         client_id: CLIENT_ID,
         scope: SCOPE,
         redirect_uri: REDIRECT_URI,
-        state: authState,
+        state: session.authState,
       });
 
-      res.writeHead(302, { Location: `${spotifyAccounts}/authorize?${params}` });
+      res.writeHead(302, {
+        Location: `${spotifyAccounts}/authorize?${params}`,
+        ...(cookie ? { "Set-Cookie": cookie } : {}),
+      });
       return res.end();
     }
 
     if (url.pathname === "/callback") {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
+      const { session, cookie } = getOrCreateSession(req);
 
-      if (!code || state !== authState) {
+      if (!code || state !== session.authState) {
         return sendText(res, "Spotify login failed. Please try again.", 400);
       }
 
-      tokenSet = await exchangeCodeForToken(code);
-      res.writeHead(302, { Location: "/" });
+      session.tokenSet = await exchangeCodeForToken(code);
+      session.authState = "";
+      res.writeHead(302, {
+        Location: "/",
+        ...(cookie ? { "Set-Cookie": cookie } : {}),
+      });
       return res.end();
     }
 
     if (url.pathname === "/logout") {
-      tokenSet = null;
+      const { session } = getOrCreateSession(req);
+      session.tokenSet = null;
+      session.authState = "";
       res.writeHead(302, { Location: "/" });
       return res.end();
     }
 
     if (url.pathname === "/api/now-playing") {
-      const track = await getCurrentTrack();
+      const { session, cookie } = getOrCreateSession(req);
+      const track = await getCurrentTrack(session);
 
       if (!track) {
-        return sendJson(res, {
-          authenticated: Boolean(tokenSet),
+        return sendJson(
+          res,
+          {
+          authenticated: Boolean(session.tokenSet),
           playing: false,
           track: null,
           lyrics: null,
-        });
+          },
+          200,
+          cookie,
+        );
       }
 
       const lyrics = await getLyrics(track);
       const translated = lyrics ? await translateLyrics(lyrics.plainLyrics) : "";
 
-      return sendJson(res, {
-        authenticated: true,
-        playing: track.isPlaying,
-        track,
-        lyrics: lyrics ? buildLyricsResponse(lyrics, translated) : null,
-      });
+      return sendJson(
+        res,
+        {
+          authenticated: true,
+          playing: track.isPlaying,
+          track,
+          lyrics: lyrics ? buildLyricsResponse(lyrics, translated) : null,
+        },
+        200,
+        cookie,
+      );
     }
 
     return serveStatic(url.pathname, res);
@@ -157,6 +179,33 @@ function isAppUnlocked(req) {
   return cookies[APP_COOKIE] && verifySignedValue(cookies[APP_COOKIE], "unlocked");
 }
 
+function getOrCreateSession(req) {
+  const cookies = parseCookies(req.headers.cookie || "");
+  const signedSessionId = cookies[SESSION_COOKIE] || "";
+  const sessionId = verifySignedPrefix(signedSessionId, "sid:");
+
+  if (sessionId && sessions.has(sessionId)) {
+    const session = sessions.get(sessionId);
+    session.lastSeen = Date.now();
+    return { session, cookie: null };
+  }
+
+  const nextSessionId = crypto.randomBytes(24).toString("hex");
+  const session = {
+    id: nextSessionId,
+    authState: "",
+    tokenSet: null,
+    createdAt: Date.now(),
+    lastSeen: Date.now(),
+  };
+  sessions.set(nextSessionId, session);
+
+  return {
+    session,
+    cookie: `${SESSION_COOKIE}=${encodeURIComponent(signValue(`sid:${nextSessionId}`))}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`,
+  };
+}
+
 function parseCookies(header) {
   return Object.fromEntries(
     header
@@ -190,6 +239,26 @@ function verifySignedValue(signed, expectedValue) {
     signature.length === expectedSignature.length &&
     crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
   );
+}
+
+function verifySignedPrefix(signed, prefix) {
+  const dot = signed.lastIndexOf(".");
+  if (dot === -1) return "";
+
+  const value = signed.slice(0, dot);
+  const signature = signed.slice(dot + 1);
+  const expectedSigned = signValue(value);
+  const expectedSignature = expectedSigned.slice(expectedSigned.lastIndexOf(".") + 1);
+
+  if (
+    !value.startsWith(prefix) ||
+    signature.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+  ) {
+    return "";
+  }
+
+  return value.slice(prefix.length);
 }
 
 async function handleUnlock(req, res) {
@@ -312,12 +381,12 @@ async function exchangeCodeForToken(code) {
   return normalizeTokenSet(data);
 }
 
-async function refreshAccessToken() {
-  if (!tokenSet?.refreshToken) return null;
+async function refreshAccessToken(session) {
+  if (!session.tokenSet?.refreshToken) return null;
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    refresh_token: tokenSet.refreshToken,
+    refresh_token: session.tokenSet.refreshToken,
   });
 
   const response = await fetch(`${spotifyAccounts}/api/token`, {
@@ -330,13 +399,13 @@ async function refreshAccessToken() {
   });
 
   if (!response.ok) {
-    tokenSet = null;
+    session.tokenSet = null;
     throw new Error(`Spotify token refresh failed: ${response.status}`);
   }
 
   const data = await response.json();
-  tokenSet = normalizeTokenSet(data, tokenSet.refreshToken);
-  return tokenSet;
+  session.tokenSet = normalizeTokenSet(data, session.tokenSet.refreshToken);
+  return session.tokenSet;
 }
 
 function normalizeTokenSet(data, fallbackRefreshToken = "") {
@@ -347,16 +416,16 @@ function normalizeTokenSet(data, fallbackRefreshToken = "") {
   };
 }
 
-async function getValidAccessToken() {
-  if (!tokenSet) return null;
-  if (Date.now() >= tokenSet.expiresAt) {
-    await refreshAccessToken();
+async function getValidAccessToken(session) {
+  if (!session.tokenSet) return null;
+  if (Date.now() >= session.tokenSet.expiresAt) {
+    await refreshAccessToken(session);
   }
-  return tokenSet?.accessToken || null;
+  return session.tokenSet?.accessToken || null;
 }
 
-async function getCurrentTrack() {
-  const accessToken = await getValidAccessToken();
+async function getCurrentTrack(session) {
+  const accessToken = await getValidAccessToken(session);
   if (!accessToken) return null;
 
   const response = await fetch(`${spotifyApi}/me/player/currently-playing`, {
@@ -365,8 +434,8 @@ async function getCurrentTrack() {
 
   if (response.status === 204) return null;
   if (response.status === 401) {
-    await refreshAccessToken();
-    return getCurrentTrack();
+    await refreshAccessToken(session);
+    return getCurrentTrack(session);
   }
   if (!response.ok) {
     throw new Error(`Spotify now-playing failed: ${response.status}`);
@@ -567,8 +636,11 @@ function contentType(filePath) {
   );
 }
 
-function sendJson(res, value, status = 200) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(res, value, status = 200, cookie = null) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...(cookie ? { "Set-Cookie": cookie } : {}),
+  });
   res.end(JSON.stringify(value));
 }
 
