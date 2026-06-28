@@ -44,6 +44,10 @@ const server = http.createServer(async (req, res) => {
       return handleUnlock(req, res);
     }
 
+    if (isPublicAsset(url.pathname)) {
+      return serveStatic(url.pathname, res);
+    }
+
     if (!isAppUnlocked(req)) {
       if (url.pathname.startsWith("/api/")) {
         return sendJson(res, { error: "locked" }, 401);
@@ -198,6 +202,10 @@ function getLanUrls() {
     .flat()
     .filter((item) => item && item.family === "IPv4" && !item.internal)
     .map((item) => `http://${item.address}:${PORT}`);
+}
+
+function isPublicAsset(pathname) {
+  return ["/app.js", "/styles.css", "/favicon.ico"].includes(pathname);
 }
 
 function isAppUnlocked(req) {
