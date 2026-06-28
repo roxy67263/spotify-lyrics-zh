@@ -15,6 +15,8 @@ const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || CLIENT_SECRET || "local-dev-secret";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const APP_COOKIE = "spotify_lyrics_app";
 const SESSION_COOKIE = "spotify_lyrics_sid";
 const SCOPE = "user-read-currently-playing user-read-playback-state";
@@ -534,7 +536,7 @@ async function getBestTranslation(track, lyrics) {
 
   return {
     text: await translateLyrics(lyrics.plainLyrics),
-    source: OPENAI_API_KEY ? "OpenAI" : "Google Translate",
+    source: getMachineTranslationSource(),
   };
 }
 
@@ -692,16 +694,24 @@ async function translateLyrics(text) {
     return cleanText === "Instrumental" ? "純音樂" : "";
   }
 
-  const provider = OPENAI_API_KEY ? "openai" : "google";
+  const provider = DEEPSEEK_API_KEY ? "deepseek" : OPENAI_API_KEY ? "openai" : "google";
   const cacheKey = `${provider}:${cleanText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
 
-  const result = OPENAI_API_KEY
-    ? await translateLyricsWithOpenAI(cleanText)
-    : await translateLyricsWithGoogle(cleanText);
+  const result = DEEPSEEK_API_KEY
+    ? await translateLyricsWithDeepSeek(cleanText)
+    : OPENAI_API_KEY
+      ? await translateLyricsWithOpenAI(cleanText)
+      : await translateLyricsWithGoogle(cleanText);
 
   translationCache.set(cacheKey, result);
   return result;
+}
+
+function getMachineTranslationSource() {
+  if (DEEPSEEK_API_KEY) return "DeepSeek";
+  if (OPENAI_API_KEY) return "OpenAI";
+  return "Google Translate";
 }
 
 async function translateLyricsWithGoogle(text) {
@@ -770,6 +780,53 @@ async function translateLyricsWithOpenAI(text) {
 
     const data = await response.json();
     translatedChunks.push(extractOpenAIText(data));
+  }
+
+  return translatedChunks.join("\n").trim();
+}
+
+async function translateLyricsWithDeepSeek(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const chunks = chunkLines(lines, 50);
+  const translatedChunks = [];
+
+  for (const chunk of chunks) {
+    const numberedLyrics = chunk.map((line, index) => `${index + 1}. ${line}`).join("\n");
+    const messages = [
+      {
+        role: "system",
+        content:
+          "你是專業歌詞翻譯助手。請把歌詞翻成自然、好懂、適合台灣讀者的繁體中文。保留每一行的順序與行數，不要加入解釋、標題、編號或括號註記。可以意譯，讓語氣像中文歌詞或自然字幕，不要逐字硬翻。專有名詞、人名、品牌名通常保留原文。",
+      },
+      {
+        role: "user",
+        content: `歌詞：\n${numberedLyrics}`,
+      },
+    ];
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages,
+        temperature: 0.4,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DeepSeek translation failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    translatedChunks.push(data?.choices?.[0]?.message?.content?.trim() || "");
   }
 
   return translatedChunks.join("\n").trim();

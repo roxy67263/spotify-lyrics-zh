@@ -19,5 +19,9 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.4-mini
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-flash
       - key: SESSION_SECRET
         generateValue: true
