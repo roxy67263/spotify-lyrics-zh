@@ -47,6 +47,8 @@ SPOTIFY_CLIENT_ID=你的 Spotify Client ID
 SPOTIFY_CLIENT_SECRET=你的 Spotify Client Secret
 SPOTIFY_REDIRECT_URI=https://你的-render網址.onrender.com/callback
 APP_PASSWORD=你自己設定的登入密碼
+OPENAI_API_KEY=可選，填了翻譯會更自然
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 `SESSION_SECRET` 可以讓 Render 自動產生，或自己填一串很長的隨機文字。
@@ -73,4 +75,5 @@ https://spotify-lyrics-zh.onrender.com/callback
 - 歌詞來源使用 LRCLIB；有些歌曲可能找不到歌詞。
 - 如果 LRCLIB 有同步歌詞，App 會跟著 Spotify 播放進度高亮目前句子。
 - 每個瀏覽器都有自己的 Spotify 登入狀態，不同使用者不會互相覆蓋。
-- 翻譯目前使用免金鑰的 Google Translate 網路端點，適合個人 MVP。長期穩定使用建議改接正式翻譯 API。
+- 如果有設定 `OPENAI_API_KEY`，翻譯會使用 OpenAI 以歌詞上下文做自然繁中翻譯。
+- 如果沒有設定 `OPENAI_API_KEY`，會退回免金鑰的 Google Translate 網路端點，適合個人 MVP。

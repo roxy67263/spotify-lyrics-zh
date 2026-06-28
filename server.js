@@ -13,6 +13,8 @@ const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || "";
 const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`;
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || CLIENT_SECRET || "local-dev-secret";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const APP_COOKIE = "spotify_lyrics_app";
 const SESSION_COOKIE = "spotify_lyrics_sid";
 const SCOPE = "user-read-currently-playing user-read-playback-state";
@@ -546,9 +548,21 @@ async function translateLyrics(text) {
   if (!cleanText || cleanText === "Instrumental") {
     return cleanText === "Instrumental" ? "純音樂" : "";
   }
-  if (translationCache.has(cleanText)) return translationCache.get(cleanText);
 
-  const chunks = chunkText(cleanText, 4200);
+  const provider = OPENAI_API_KEY ? "openai" : "google";
+  const cacheKey = `${provider}:${cleanText}`;
+  if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+
+  const result = OPENAI_API_KEY
+    ? await translateLyricsWithOpenAI(cleanText)
+    : await translateLyricsWithGoogle(cleanText);
+
+  translationCache.set(cacheKey, result);
+  return result;
+}
+
+async function translateLyricsWithGoogle(text) {
+  const chunks = chunkText(text, 4200);
   const translated = [];
 
   for (const chunk of chunks) {
@@ -569,8 +583,71 @@ async function translateLyrics(text) {
   }
 
   const result = translated.join("\n").trim();
-  translationCache.set(cleanText, result);
   return result;
+}
+
+async function translateLyricsWithOpenAI(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const chunks = chunkLines(lines, 50);
+  const translatedChunks = [];
+
+  for (const chunk of chunks) {
+    const numberedLyrics = chunk.map((line, index) => `${index + 1}. ${line}`).join("\n");
+    const prompt = [
+      "你是專業歌詞翻譯助手。請把歌詞翻成自然、好懂、適合台灣讀者的繁體中文。",
+      "要求：",
+      "- 保留每一行的順序與行數。",
+      "- 不要加入解釋、標題、編號或括號註記。",
+      "- 可以意譯，讓語氣像中文歌詞或自然字幕，不要逐字硬翻。",
+      "- 專有名詞、人名、品牌名通常保留原文。",
+      "",
+      "歌詞：",
+      numberedLyrics,
+    ].join("\n");
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: prompt,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI translation failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    translatedChunks.push(extractOpenAIText(data));
+  }
+
+  return translatedChunks.join("\n").trim();
+}
+
+function extractOpenAIText(data) {
+  if (data.output_text) return data.output_text.trim();
+
+  return (data.output || [])
+    .flatMap((item) => item.content || [])
+    .map((content) => content.text || "")
+    .join("")
+    .trim();
+}
+
+function chunkLines(lines, maxLines) {
+  const chunks = [];
+  for (let index = 0; index < lines.length; index += maxLines) {
+    chunks.push(lines.slice(index, index + maxLines));
+  }
+  return chunks;
 }
 
 function chunkText(text, maxLength) {
