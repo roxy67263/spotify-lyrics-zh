@@ -125,8 +125,26 @@ const server = http.createServer(async (req, res) => {
         );
       }
 
-      const lyrics = await getLyrics(track);
-      const translation = lyrics ? await getBestTranslation(track, lyrics) : { text: "", source: "" };
+      let lyrics = null;
+      let translation = { text: "", source: "" };
+      let lyricError = "";
+      let translationError = "";
+
+      try {
+        lyrics = await getLyrics(track);
+      } catch (error) {
+        lyricError = error.message;
+        console.warn(`Lyrics lookup failed: ${error.message}`);
+      }
+
+      if (lyrics) {
+        try {
+          translation = await getBestTranslation(track, lyrics);
+        } catch (error) {
+          translationError = error.message;
+          console.warn(`Translation failed: ${error.message}`);
+        }
+      }
 
       return sendJson(
         res,
@@ -135,6 +153,8 @@ const server = http.createServer(async (req, res) => {
           playing: track.isPlaying,
           track,
           lyrics: lyrics ? buildLyricsResponse(lyrics, translation) : null,
+          lyricError,
+          translationError,
         },
         200,
         cookie,

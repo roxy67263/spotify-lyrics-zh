@@ -135,12 +135,13 @@ function renderLyrics(data) {
 
   if (!data.lyrics) {
     els.source.textContent = "-";
-    renderMessage("找不到這首歌的歌詞。");
+    renderMessage(data.lyricError ? `歌詞暫時讀取失敗：${data.lyricError}` : "找不到這首歌的歌詞。");
     return;
   }
 
   const sourceParts = [data.lyrics.source];
   if (data.lyrics.translationSource) sourceParts.push(data.lyrics.translationSource);
+  if (data.translationError && !data.lyrics.translationSource) sourceParts.push("翻譯暫時失敗");
   if (data.lyrics.synced?.length) sourceParts.push("逐句同步");
   els.source.textContent = sourceParts.join(" · ");
 
@@ -156,6 +157,10 @@ function renderLyrics(data) {
       )
       .join("");
     return;
+  }
+
+  if (data.translationError && !data.lyrics.translated) {
+    els.source.textContent = `${data.lyrics.source} · 翻譯暫時失敗`;
   }
 
   const originalLines = (data.lyrics.original || "").split(/\r?\n/);
