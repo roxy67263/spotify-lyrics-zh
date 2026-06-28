@@ -522,7 +522,15 @@ function parseSyncedLyrics(text) {
 
 async function getBestTranslation(track, lyrics) {
   const existing = await getNetEaseTranslation(track, lyrics);
-  if (existing?.text) return existing;
+  if (existing?.text && existing.coverage >= 0.78) {
+    if (existing.coverage >= 0.96) return existing;
+
+    const machineText = await translateLyrics(lyrics.plainLyrics);
+    return {
+      text: mergeMissingTranslatedLines(existing.text, machineText),
+      source: `${existing.source} + missing lines filled`,
+    };
+  }
 
   return {
     text: await translateLyrics(lyrics.plainLyrics),
@@ -547,9 +555,10 @@ async function getNetEaseTranslation(track, lyrics) {
       const translatedLines = parseSyncedLyrics(translatedLrc);
       if (!translatedLines.length) continue;
 
-      const text = alignTranslatedLyrics(lyrics, translatedLines);
+      const aligned = alignTranslatedLyrics(lyrics, translatedLines);
+      const text = aligned.lines.join("\n");
       if (text.trim()) {
-        return { text, source: "NetEase translated lyrics" };
+        return { text, source: "NetEase translated lyrics", coverage: aligned.coverage };
       }
     }
   } catch (error) {
@@ -610,15 +619,20 @@ function normalizeSearchText(text) {
 
 function alignTranslatedLyrics(lyrics, translatedLines) {
   if (!lyrics.syncedLines.length) {
-    return translatedLines.map((line) => line.text).join("\n");
+    const lines = translatedLines.map((line) => line.text);
+    return { lines, coverage: lines.length ? 1 : 0 };
   }
 
-  return lyrics.syncedLines
-    .map((line) => {
+  const lines = lyrics.syncedLines.map((line) => {
       const match = findClosestTimedLine(line.timeMs, translatedLines);
       return match && Math.abs(match.timeMs - line.timeMs) < 1600 ? match.text : "";
-    })
-    .join("\n");
+    });
+  const translatedCount = lines.filter(Boolean).length;
+
+  return {
+    lines,
+    coverage: lyrics.syncedLines.length ? translatedCount / lyrics.syncedLines.length : 0,
+  };
 }
 
 function findClosestTimedLine(timeMs, lines) {
@@ -657,6 +671,19 @@ function buildLyricsResponse(lyrics, translation) {
 function splitTranslatedLines(text, keepBlank = false) {
   const lines = (text || "").split(/\r?\n/).map((line) => line.trim());
   return keepBlank ? lines : lines.filter(Boolean);
+}
+
+function mergeMissingTranslatedLines(primaryText, fallbackText) {
+  const primary = splitTranslatedLines(primaryText, true);
+  const fallback = splitTranslatedLines(fallbackText, true);
+  const length = Math.max(primary.length, fallback.length);
+  const merged = [];
+
+  for (let index = 0; index < length; index += 1) {
+    merged.push(primary[index] || fallback[index] || "");
+  }
+
+  return merged.join("\n").trim();
 }
 
 async function translateLyrics(text) {
