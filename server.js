@@ -458,6 +458,9 @@ async function getCurrentTrack(session) {
   });
 
   if (response.status === 204) return null;
+  if (response.status === 403) {
+    throw new Error("這個 Spotify 帳號還不能使用此 App。請到 Spotify Developer Dashboard 的 Users Management 把這個帳號加入名單。");
+  }
   if (response.status === 401) {
     await refreshAccessToken(session);
     return getCurrentTrack(session);
