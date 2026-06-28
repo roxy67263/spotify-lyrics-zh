@@ -139,7 +139,10 @@ function renderLyrics(data) {
     return;
   }
 
-  els.source.textContent = data.lyrics.synced?.length ? `${data.lyrics.source} · 逐句同步` : data.lyrics.source;
+  const sourceParts = [data.lyrics.source];
+  if (data.lyrics.translationSource) sourceParts.push(data.lyrics.translationSource);
+  if (data.lyrics.synced?.length) sourceParts.push("逐句同步");
+  els.source.textContent = sourceParts.join(" · ");
 
   if (data.lyrics.synced?.length) {
     els.syncedLyrics.innerHTML = data.lyrics.synced

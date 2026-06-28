@@ -124,7 +124,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const lyrics = await getLyrics(track);
-      const translated = lyrics ? await translateLyrics(lyrics.plainLyrics) : "";
+      const translation = lyrics ? await getBestTranslation(track, lyrics) : { text: "", source: "" };
 
       return sendJson(
         res,
@@ -132,7 +132,7 @@ const server = http.createServer(async (req, res) => {
           authenticated: true,
           playing: track.isPlaying,
           track,
-          lyrics: lyrics ? buildLyricsResponse(lyrics, translated) : null,
+          lyrics: lyrics ? buildLyricsResponse(lyrics, translation) : null,
         },
         200,
         cookie,
@@ -520,8 +520,125 @@ function parseSyncedLyrics(text) {
     .filter(Boolean);
 }
 
-function buildLyricsResponse(lyrics, translated) {
-  const translatedLines = splitTranslatedLines(translated);
+async function getBestTranslation(track, lyrics) {
+  const existing = await getNetEaseTranslation(track, lyrics);
+  if (existing?.text) return existing;
+
+  return {
+    text: await translateLyrics(lyrics.plainLyrics),
+    source: OPENAI_API_KEY ? "OpenAI" : "Google Translate",
+  };
+}
+
+async function getNetEaseTranslation(track, lyrics) {
+  try {
+    const candidates = await searchNetEaseSongs(track);
+
+    for (const candidate of candidates) {
+      const response = await fetchJson(
+        `https://music.163.com/api/song/lyric?id=${candidate.id}&lv=1&kv=1&tv=1`,
+        {
+          Referer: "https://music.163.com/",
+        },
+      );
+      const translatedLrc = response?.tlyric?.lyric || "";
+      if (!translatedLrc.trim()) continue;
+
+      const translatedLines = parseSyncedLyrics(translatedLrc);
+      if (!translatedLines.length) continue;
+
+      const text = alignTranslatedLyrics(lyrics, translatedLines);
+      if (text.trim()) {
+        return { text, source: "NetEase translated lyrics" };
+      }
+    }
+  } catch (error) {
+    console.warn(`NetEase translation lookup failed: ${error.message}`);
+  }
+
+  return null;
+}
+
+async function searchNetEaseSongs(track) {
+  const query = encodeURIComponent(`${track.name} ${track.artists.join(" ")}`);
+  const data = await fetchJson(`https://music.163.com/api/search/get/web?s=${query}&type=1&limit=8&offset=0`, {
+    Referer: "https://music.163.com/",
+  });
+  const songs = data?.result?.songs || [];
+
+  return songs
+    .map((song) => ({
+      id: song.id,
+      name: song.name || "",
+      durationMs: song.duration || 0,
+      artists: (song.artists || []).map((artist) => artist.name || ""),
+      score: scoreNetEaseSong(song, track),
+    }))
+    .filter((song) => song.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+
+function scoreNetEaseSong(song, track) {
+  const songName = normalizeSearchText(song.name || "");
+  const trackName = normalizeSearchText(track.name || "");
+  const songArtists = (song.artists || []).map((artist) => normalizeSearchText(artist.name || ""));
+  const trackArtists = track.artists.map(normalizeSearchText);
+  const durationDiff = Math.abs((song.duration || 0) - track.durationMs);
+
+  let score = 0;
+  if (songName === trackName) score += 4;
+  else if (songName.includes(trackName) || trackName.includes(songName)) score += 2;
+
+  if (songArtists.some((artist) => trackArtists.some((target) => artist.includes(target) || target.includes(artist)))) {
+    score += 4;
+  }
+
+  if (durationDiff < 2500) score += 3;
+  else if (durationDiff < 8000) score += 1;
+
+  return score;
+}
+
+function normalizeSearchText(text) {
+  return text
+    .toLowerCase()
+    .replace(/\([^)]*\)|（[^）]*）|\[[^\]]*\]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .trim();
+}
+
+function alignTranslatedLyrics(lyrics, translatedLines) {
+  if (!lyrics.syncedLines.length) {
+    return translatedLines.map((line) => line.text).join("\n");
+  }
+
+  return lyrics.syncedLines
+    .map((line) => {
+      const match = findClosestTimedLine(line.timeMs, translatedLines);
+      return match && Math.abs(match.timeMs - line.timeMs) < 1600 ? match.text : "";
+    })
+    .join("\n");
+}
+
+function findClosestTimedLine(timeMs, lines) {
+  let best = null;
+  let bestDiff = Infinity;
+
+  for (const line of lines) {
+    const diff = Math.abs(line.timeMs - timeMs);
+    if (diff < bestDiff) {
+      best = line;
+      bestDiff = diff;
+    }
+  }
+
+  return best;
+}
+
+function buildLyricsResponse(lyrics, translation) {
+  const translated = translation.text || "";
+  const translatedLines = splitTranslatedLines(translated, true);
   const synced = lyrics.syncedLines.map((line, index) => ({
     ...line,
     translation: translatedLines[index] || "",
@@ -532,15 +649,14 @@ function buildLyricsResponse(lyrics, translated) {
     instrumental: lyrics.instrumental,
     original: lyrics.plainLyrics,
     translated,
+    translationSource: translation.source || "",
     synced,
   };
 }
 
-function splitTranslatedLines(text) {
-  return (text || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function splitTranslatedLines(text, keepBlank = false) {
+  const lines = (text || "").split(/\r?\n/).map((line) => line.trim());
+  return keepBlank ? lines : lines.filter(Boolean);
 }
 
 async function translateLyrics(text) {
@@ -669,11 +785,12 @@ function chunkText(text, maxLength) {
   return chunks;
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, extraHeaders = {}) {
   const response = await fetch(url, {
     headers: {
       "User-Agent": "spotify-lyrics-zh/0.1.0 (local personal app)",
       Accept: "application/json",
+      ...extraHeaders,
     },
   });
 
