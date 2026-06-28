@@ -524,8 +524,7 @@ function parseSyncedLyrics(text) {
 
 async function getBestTranslation(track, lyrics) {
   return {
-    text: await translateLyrics(lyrics.plainLyrics),
-    source: getMachineTranslationSource(),
+    ...await translateLyrics(lyrics.plainLyrics),
   };
 }
 
@@ -680,21 +679,40 @@ function mergeMissingTranslatedLines(primaryText, fallbackText) {
 async function translateLyrics(text) {
   const cleanText = (text || "").trim();
   if (!cleanText || cleanText === "Instrumental") {
-    return cleanText === "Instrumental" ? "純音樂" : "";
+    return {
+      text: cleanText === "Instrumental" ? "純音樂" : "",
+      source: getMachineTranslationSource(),
+    };
   }
 
   const provider = DEEPSEEK_API_KEY ? "deepseek" : OPENAI_API_KEY ? "openai" : "google";
   const cacheKey = `${provider}:${cleanText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
 
-  const result = DEEPSEEK_API_KEY
-    ? await translateLyricsWithDeepSeek(cleanText)
-    : OPENAI_API_KEY
-      ? await translateLyricsWithOpenAI(cleanText)
-      : await translateLyricsWithGoogle(cleanText);
+  const result = await translateLyricsWithFallback(cleanText);
 
   translationCache.set(cacheKey, result);
   return result;
+}
+
+async function translateLyricsWithFallback(text) {
+  if (DEEPSEEK_API_KEY) {
+    try {
+      return { text: await translateLyricsWithDeepSeek(text), source: "DeepSeek" };
+    } catch (error) {
+      console.warn(`DeepSeek translation unavailable, falling back: ${error.message}`);
+    }
+  }
+
+  if (OPENAI_API_KEY) {
+    try {
+      return { text: await translateLyricsWithOpenAI(text), source: "OpenAI" };
+    } catch (error) {
+      console.warn(`OpenAI translation unavailable, falling back: ${error.message}`);
+    }
+  }
+
+  return { text: await translateLyricsWithGoogle(text), source: "Google Translate" };
 }
 
 function getMachineTranslationSource() {
