@@ -739,6 +739,23 @@ async function translateLyricsWithFallback(text, userTranslation = {}) {
   const provider = getMachineTranslationProvider(userTranslation);
   const apiKey = userTranslation.apiKey || "";
   const model = getMachineTranslationModel(provider, userTranslation);
+  const isUserProvider = Boolean(userTranslation.provider && userTranslation.provider !== "server");
+
+  if (isUserProvider && provider !== "google" && !apiKey) {
+    throw new Error(`已選 ${getMachineTranslationSource(userTranslation)}，但還沒有填 API key。`);
+  }
+
+  if (isUserProvider && provider === "deepseek") {
+    return { text: await translateLyricsWithDeepSeek(text, apiKey, model), source: `DeepSeek · ${model}` };
+  }
+
+  if (isUserProvider && provider === "openai") {
+    return { text: await translateLyricsWithOpenAI(text, apiKey, model), source: `OpenAI · ${model}` };
+  }
+
+  if (isUserProvider && provider === "gemini") {
+    return { text: await translateLyricsWithGemini(text, apiKey, model), source: `Gemini · ${model}` };
+  }
 
   if (provider === "deepseek" && (apiKey || DEEPSEEK_API_KEY)) {
     try {

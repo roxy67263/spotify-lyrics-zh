@@ -60,7 +60,7 @@ function bindSettings() {
       model: els.modelInput.value.trim(),
     };
     window.localStorage.setItem(settingsKey, JSON.stringify(settings));
-    els.settingsStatus.textContent = "已儲存在這個瀏覽器。下一首歌或重新整理後會使用。";
+    els.settingsStatus.textContent = "已儲存在這個瀏覽器。請重新整理或換歌後套用。";
   });
 
   els.providerSelect.addEventListener("change", () => {
