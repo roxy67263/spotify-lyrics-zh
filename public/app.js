@@ -7,10 +7,18 @@ const els = {
   login: document.querySelector("#login"),
   progressBar: document.querySelector("#progressBar"),
   phoneHint: document.querySelector("#phoneHint"),
+  settingsToggle: document.querySelector("#settingsToggle"),
+  settingsPanel: document.querySelector("#settingsPanel"),
+  providerSelect: document.querySelector("#providerSelect"),
+  apiKeyInput: document.querySelector("#apiKeyInput"),
+  modelInput: document.querySelector("#modelInput"),
+  saveSettings: document.querySelector("#saveSettings"),
+  settingsStatus: document.querySelector("#settingsStatus"),
   syncedLyrics: document.querySelector("#syncedLyrics"),
   source: document.querySelector("#source"),
 };
 
+const settingsKey = "spotifyLyricsTranslatorSettings";
 let lastTrackId = "";
 let currentTrack = null;
 let currentLyrics = null;
@@ -20,21 +28,63 @@ let localProgressOffsetMs = 0;
 init();
 
 async function init() {
+  loadTranslationSettings();
+  bindSettings();
+
   const config = await getJson("/api/config");
   renderPhoneHint(config);
 
   if (!config.configured) {
     els.status.textContent = "尚未設定 Spotify API";
-    els.title.textContent = "需要先填好 .env";
+    els.title.textContent = "需要先填好環境變數";
     els.artist.textContent = `Redirect URI：${config.redirectUri}`;
     els.login.style.display = "none";
-    renderMessage("請依 README 設定 Spotify Client ID 與 Secret。");
+    renderMessage("請在 Render 設定 Spotify Client ID 與 Secret。");
     return;
   }
 
   await refresh();
   window.setInterval(refresh, 2500);
   window.setInterval(tickPlayback, 250);
+}
+
+function bindSettings() {
+  els.settingsToggle.addEventListener("click", () => {
+    els.settingsPanel.hidden = !els.settingsPanel.hidden;
+  });
+
+  els.saveSettings.addEventListener("click", () => {
+    const settings = {
+      provider: els.providerSelect.value,
+      apiKey: els.apiKeyInput.value.trim(),
+      model: els.modelInput.value.trim(),
+    };
+    window.localStorage.setItem(settingsKey, JSON.stringify(settings));
+    els.settingsStatus.textContent = "已儲存在這個瀏覽器。下一首歌或重新整理後會使用。";
+  });
+
+  els.providerSelect.addEventListener("change", () => {
+    if (els.providerSelect.value === "google" || els.providerSelect.value === "server") {
+      els.apiKeyInput.placeholder = "不需要 API key";
+    } else {
+      els.apiKeyInput.placeholder = "只存在你的瀏覽器";
+    }
+  });
+}
+
+function loadTranslationSettings() {
+  const settings = getTranslationSettings();
+  els.providerSelect.value = settings.provider || "server";
+  els.apiKeyInput.value = settings.apiKey || "";
+  els.modelInput.value = settings.model || "";
+}
+
+function getTranslationSettings() {
+  try {
+    return JSON.parse(window.localStorage.getItem(settingsKey) || "{}");
+  } catch {
+    return {};
+  }
 }
 
 async function refresh() {
@@ -84,12 +134,9 @@ function renderPhoneHint(config) {
   }
 
   const urls = config.lanUrls || [];
-  if (!urls.length) {
-    els.phoneHint.textContent = "手機和電腦連同一個 Wi-Fi 後，用電腦 IP 開啟這個 App。";
-    return;
-  }
-
-  els.phoneHint.textContent = `手機同 Wi-Fi 開：${urls[0]}`;
+  els.phoneHint.textContent = urls.length
+    ? `手機同 Wi-Fi 開：${urls[0]}`
+    : "手機和電腦連同一個 Wi-Fi 後，用電腦 IP 開啟這個 App。";
 }
 
 function showLoggedOut() {
@@ -224,7 +271,9 @@ function escapeHtml(value) {
 }
 
 async function getJson(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: buildTranslationHeaders(),
+  });
   const data = await response.json();
 
   if (!response.ok) {
@@ -232,4 +281,21 @@ async function getJson(url) {
   }
 
   return data;
+}
+
+function buildTranslationHeaders() {
+  const settings = getTranslationSettings();
+  const headers = {};
+
+  if (settings.provider && settings.provider !== "server") {
+    headers["X-Translation-Provider"] = settings.provider;
+  }
+  if (settings.apiKey) {
+    headers["X-Translation-Key"] = settings.apiKey;
+  }
+  if (settings.model) {
+    headers["X-Translation-Model"] = settings.model;
+  }
+
+  return headers;
 }

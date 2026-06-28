@@ -142,7 +142,7 @@ const server = http.createServer(async (req, res) => {
 
       if (lyrics) {
         try {
-          translation = await getBestTranslation(track, lyrics);
+          translation = await getBestTranslation(track, lyrics, getRequestTranslationOptions(req));
         } catch (error) {
           translationError = error.message;
           console.warn(`Translation failed: ${error.message}`);
@@ -548,9 +548,21 @@ function parseSyncedLyrics(text) {
     .filter(Boolean);
 }
 
-async function getBestTranslation(track, lyrics) {
+function getRequestTranslationOptions(req) {
+  const provider = String(req.headers["x-translation-provider"] || "").toLowerCase();
+  const apiKey = String(req.headers["x-translation-key"] || "").trim();
+  const model = String(req.headers["x-translation-model"] || "").trim();
+
   return {
-    ...await translateLyrics(lyrics.plainLyrics),
+    provider: ["google", "openai", "deepseek", "gemini"].includes(provider) ? provider : "",
+    apiKey,
+    model,
+  };
+}
+
+async function getBestTranslation(track, lyrics, userTranslation = {}) {
+  return {
+    ...await translateLyrics(lyrics.plainLyrics, userTranslation),
   };
 }
 
@@ -702,47 +714,51 @@ function mergeMissingTranslatedLines(primaryText, fallbackText) {
   return merged.join("\n").trim();
 }
 
-async function translateLyrics(text) {
+async function translateLyrics(text, userTranslation = {}) {
   const cleanText = (text || "").trim();
   if (!cleanText || cleanText === "Instrumental") {
     return {
       text: cleanText === "Instrumental" ? "純音樂" : "",
-      source: getMachineTranslationSource(),
+      source: getMachineTranslationSource(userTranslation),
     };
   }
 
-  const provider = getMachineTranslationProvider();
-  const cacheKey = `${provider}:${cleanText}`;
+  const provider = getMachineTranslationProvider(userTranslation);
+  const model = getMachineTranslationModel(provider, userTranslation);
+  const keyHash = userTranslation.apiKey ? crypto.createHash("sha256").update(userTranslation.apiKey).digest("hex").slice(0, 12) : "server";
+  const cacheKey = `${provider}:${model}:${keyHash}:${cleanText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
 
-  const result = await translateLyricsWithFallback(cleanText);
+  const result = await translateLyricsWithFallback(cleanText, userTranslation);
 
   translationCache.set(cacheKey, result);
   return result;
 }
 
-async function translateLyricsWithFallback(text) {
-  const provider = getMachineTranslationProvider();
+async function translateLyricsWithFallback(text, userTranslation = {}) {
+  const provider = getMachineTranslationProvider(userTranslation);
+  const apiKey = userTranslation.apiKey || "";
+  const model = getMachineTranslationModel(provider, userTranslation);
 
-  if (provider === "deepseek" && DEEPSEEK_API_KEY) {
+  if (provider === "deepseek" && (apiKey || DEEPSEEK_API_KEY)) {
     try {
-      return { text: await translateLyricsWithDeepSeek(text), source: "DeepSeek" };
+      return { text: await translateLyricsWithDeepSeek(text, apiKey || DEEPSEEK_API_KEY, model), source: "DeepSeek" };
     } catch (error) {
       console.warn(`DeepSeek translation unavailable, falling back: ${error.message}`);
     }
   }
 
-  if (provider === "openai" && OPENAI_API_KEY) {
+  if (provider === "openai" && (apiKey || OPENAI_API_KEY)) {
     try {
-      return { text: await translateLyricsWithOpenAI(text), source: "OpenAI" };
+      return { text: await translateLyricsWithOpenAI(text, apiKey || OPENAI_API_KEY, model), source: "OpenAI" };
     } catch (error) {
       console.warn(`OpenAI translation unavailable, falling back: ${error.message}`);
     }
   }
 
-  if (provider === "gemini" && GEMINI_API_KEY) {
+  if (provider === "gemini" && (apiKey || GEMINI_API_KEY)) {
     try {
-      return { text: await translateLyricsWithGemini(text), source: "Gemini" };
+      return { text: await translateLyricsWithGemini(text, apiKey || GEMINI_API_KEY, model), source: "Gemini" };
     } catch (error) {
       console.warn(`Gemini translation unavailable, falling back: ${error.message}`);
     }
@@ -751,16 +767,24 @@ async function translateLyricsWithFallback(text) {
   return { text: await translateLyricsWithGoogle(text), source: "Google Translate" };
 }
 
-function getMachineTranslationSource() {
-  if (getMachineTranslationProvider() === "deepseek") return "DeepSeek";
-  if (getMachineTranslationProvider() === "openai") return "OpenAI";
-  if (getMachineTranslationProvider() === "gemini") return "Gemini";
+function getMachineTranslationSource(userTranslation = {}) {
+  if (getMachineTranslationProvider(userTranslation) === "deepseek") return "DeepSeek";
+  if (getMachineTranslationProvider(userTranslation) === "openai") return "OpenAI";
+  if (getMachineTranslationProvider(userTranslation) === "gemini") return "Gemini";
   return "Google Translate";
 }
 
-function getMachineTranslationProvider() {
-  const provider = TRANSLATION_PROVIDER.toLowerCase();
+function getMachineTranslationProvider(userTranslation = {}) {
+  const provider = (userTranslation.provider || TRANSLATION_PROVIDER).toLowerCase();
   return ["google", "openai", "deepseek", "gemini"].includes(provider) ? provider : "google";
+}
+
+function getMachineTranslationModel(provider, userTranslation = {}) {
+  if (userTranslation.model) return userTranslation.model;
+  if (provider === "openai") return OPENAI_MODEL;
+  if (provider === "deepseek") return DEEPSEEK_MODEL;
+  if (provider === "gemini") return GEMINI_MODEL;
+  return "";
 }
 
 async function translateLyricsWithGoogle(text) {
@@ -788,7 +812,7 @@ async function translateLyricsWithGoogle(text) {
   return result;
 }
 
-async function translateLyricsWithOpenAI(text) {
+async function translateLyricsWithOpenAI(text, apiKey = OPENAI_API_KEY, model = OPENAI_MODEL) {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -813,11 +837,11 @@ async function translateLyricsWithOpenAI(text) {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model,
         input: prompt,
       }),
     });
@@ -834,7 +858,7 @@ async function translateLyricsWithOpenAI(text) {
   return translatedChunks.join("\n").trim();
 }
 
-async function translateLyricsWithDeepSeek(text) {
+async function translateLyricsWithDeepSeek(text, apiKey = DEEPSEEK_API_KEY, model = DEEPSEEK_MODEL) {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -859,11 +883,11 @@ async function translateLyricsWithDeepSeek(text) {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
+        model,
         messages,
         temperature: 0.4,
       }),
@@ -881,7 +905,7 @@ async function translateLyricsWithDeepSeek(text) {
   return translatedChunks.join("\n").trim();
 }
 
-async function translateLyricsWithGemini(text) {
+async function translateLyricsWithGemini(text, apiKey = GEMINI_API_KEY, model = GEMINI_MODEL) {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -903,8 +927,8 @@ async function translateLyricsWithGemini(text) {
       numberedLyrics,
     ].join("\n");
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      GEMINI_MODEL,
-    )}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+      model,
+    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const response = await fetch(url, {
       method: "POST",

@@ -157,6 +157,64 @@ h1 {
   word-break: break-all;
 }
 
+.settings-card {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(25, 27, 29, 0.9);
+}
+
+.settings-toggle {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 18px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+}
+
+.settings-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 0 18px 18px;
+}
+
+.settings-panel label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-panel select,
+.settings-panel input {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #101112;
+  color: var(--text);
+  font: inherit;
+}
+
+.small-button {
+  border: 0;
+  text-align: center;
+}
+
+.settings-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .lyrics-card {
   margin-top: 18px;
   overflow: hidden;
@@ -274,6 +332,10 @@ h1 {
 
   .phone-hint {
     font-size: 12px;
+  }
+
+  .settings-panel {
+    grid-template-columns: 1fr;
   }
 
   .synced-lyrics {

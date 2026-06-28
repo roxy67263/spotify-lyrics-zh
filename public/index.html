@@ -33,6 +33,32 @@
         </div>
       </section>
 
+      <section class="settings-card">
+        <button id="settingsToggle" class="settings-toggle" type="button">翻譯設定</button>
+        <div id="settingsPanel" class="settings-panel" hidden>
+          <label>
+            翻譯來源
+            <select id="providerSelect">
+              <option value="server">使用網站預設</option>
+              <option value="google">Google 免費翻譯</option>
+              <option value="gemini">Gemini API key</option>
+              <option value="openai">OpenAI API key</option>
+              <option value="deepseek">DeepSeek API key</option>
+            </select>
+          </label>
+          <label>
+            API key
+            <input id="apiKeyInput" type="password" autocomplete="off" placeholder="只存在你的瀏覽器" />
+          </label>
+          <label>
+            模型
+            <input id="modelInput" type="text" autocomplete="off" placeholder="例如 gemini-2.5-flash" />
+          </label>
+          <button id="saveSettings" class="button small-button" type="button">儲存</button>
+          <p id="settingsStatus" class="settings-status">每個人可以用自己的 key，不會存到伺服器。</p>
+        </div>
+      </section>
+
       <section class="lyrics-card">
         <div class="card-head">
           <h2>同步歌詞</h2>

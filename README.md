@@ -80,5 +80,6 @@ https://spotify-lyrics-zh.onrender.com/callback
 - 歌詞來源使用 LRCLIB；有些歌曲可能找不到歌詞。
 - 如果 LRCLIB 有同步歌詞，App 會跟著 Spotify 播放進度高亮目前句子。
 - 每個瀏覽器都有自己的 Spotify 登入狀態，不同使用者不會互相覆蓋。
+- 每個人也可以在「翻譯設定」輸入自己的 Gemini/OpenAI/DeepSeek API key；key 只存在該瀏覽器，不會存到伺服器。
 - 預設使用免金鑰的 Google Translate 網路端點，不需要付費 API 額度。
 - 如果之後想改用 Gemini、DeepSeek 或 OpenAI，可以把 `TRANSLATION_PROVIDER` 改成 `gemini`、`deepseek` 或 `openai`，再填對應 API key。
