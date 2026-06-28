@@ -17,6 +17,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const TRANSLATION_PROVIDER = process.env.TRANSLATION_PROVIDER || "google";
 const APP_COOKIE = "spotify_lyrics_app";
 const SESSION_COOKIE = "spotify_lyrics_sid";
 const SCOPE = "user-read-currently-playing user-read-playback-state";
@@ -705,7 +706,7 @@ async function translateLyrics(text) {
     };
   }
 
-  const provider = DEEPSEEK_API_KEY ? "deepseek" : OPENAI_API_KEY ? "openai" : "google";
+  const provider = getMachineTranslationProvider();
   const cacheKey = `${provider}:${cleanText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
 
@@ -716,7 +717,9 @@ async function translateLyrics(text) {
 }
 
 async function translateLyricsWithFallback(text) {
-  if (DEEPSEEK_API_KEY) {
+  const provider = getMachineTranslationProvider();
+
+  if (provider === "deepseek" && DEEPSEEK_API_KEY) {
     try {
       return { text: await translateLyricsWithDeepSeek(text), source: "DeepSeek" };
     } catch (error) {
@@ -724,7 +727,7 @@ async function translateLyricsWithFallback(text) {
     }
   }
 
-  if (OPENAI_API_KEY) {
+  if (provider === "openai" && OPENAI_API_KEY) {
     try {
       return { text: await translateLyricsWithOpenAI(text), source: "OpenAI" };
     } catch (error) {
@@ -736,9 +739,14 @@ async function translateLyricsWithFallback(text) {
 }
 
 function getMachineTranslationSource() {
-  if (DEEPSEEK_API_KEY) return "DeepSeek";
-  if (OPENAI_API_KEY) return "OpenAI";
+  if (getMachineTranslationProvider() === "deepseek") return "DeepSeek";
+  if (getMachineTranslationProvider() === "openai") return "OpenAI";
   return "Google Translate";
+}
+
+function getMachineTranslationProvider() {
+  const provider = TRANSLATION_PROVIDER.toLowerCase();
+  return ["google", "openai", "deepseek"].includes(provider) ? provider : "google";
 }
 
 async function translateLyricsWithGoogle(text) {
