@@ -17,6 +17,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const TRANSLATION_PROVIDER = process.env.TRANSLATION_PROVIDER || "google";
 const APP_COOKIE = "spotify_lyrics_app";
 const SESSION_COOKIE = "spotify_lyrics_sid";
@@ -738,18 +740,27 @@ async function translateLyricsWithFallback(text) {
     }
   }
 
+  if (provider === "gemini" && GEMINI_API_KEY) {
+    try {
+      return { text: await translateLyricsWithGemini(text), source: "Gemini" };
+    } catch (error) {
+      console.warn(`Gemini translation unavailable, falling back: ${error.message}`);
+    }
+  }
+
   return { text: await translateLyricsWithGoogle(text), source: "Google Translate" };
 }
 
 function getMachineTranslationSource() {
   if (getMachineTranslationProvider() === "deepseek") return "DeepSeek";
   if (getMachineTranslationProvider() === "openai") return "OpenAI";
+  if (getMachineTranslationProvider() === "gemini") return "Gemini";
   return "Google Translate";
 }
 
 function getMachineTranslationProvider() {
   const provider = TRANSLATION_PROVIDER.toLowerCase();
-  return ["google", "openai", "deepseek"].includes(provider) ? provider : "google";
+  return ["google", "openai", "deepseek", "gemini"].includes(provider) ? provider : "google";
 }
 
 async function translateLyricsWithGoogle(text) {
@@ -868,6 +879,68 @@ async function translateLyricsWithDeepSeek(text) {
   }
 
   return translatedChunks.join("\n").trim();
+}
+
+async function translateLyricsWithGemini(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const chunks = chunkLines(lines, 50);
+  const translatedChunks = [];
+
+  for (const chunk of chunks) {
+    const numberedLyrics = chunk.map((line, index) => `${index + 1}. ${line}`).join("\n");
+    const prompt = [
+      "你是專業歌詞翻譯助手。請把歌詞翻成自然、好懂、適合台灣讀者的繁體中文。",
+      "要求：",
+      "- 保留每一行的順序與行數。",
+      "- 不要加入解釋、標題、編號或括號註記。",
+      "- 可以意譯，讓語氣像中文歌詞或自然字幕，不要逐字硬翻。",
+      "- 專有名詞、人名、品牌名通常保留原文。",
+      "",
+      "歌詞：",
+      numberedLyrics,
+    ].join("\n");
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      GEMINI_MODEL,
+    )}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini translation failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    translatedChunks.push(extractGeminiText(data));
+  }
+
+  return translatedChunks.join("\n").trim();
+}
+
+function extractGeminiText(data) {
+  return (data.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text || "")
+    .join("")
+    .trim();
 }
 
 function extractOpenAIText(data) {

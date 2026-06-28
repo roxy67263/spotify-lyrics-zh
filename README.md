@@ -52,6 +52,8 @@ OPENAI_API_KEY=可選，填了翻譯會更自然
 OPENAI_MODEL=gpt-5.4-mini
 DEEPSEEK_API_KEY=可選，填了會用低成本 DeepSeek 翻譯
 DEEPSEEK_MODEL=deepseek-v4-flash
+GEMINI_API_KEY=可選，Google AI Studio / Gemini API key
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 `SESSION_SECRET` 可以讓 Render 自動產生，或自己填一串很長的隨機文字。
@@ -79,4 +81,4 @@ https://spotify-lyrics-zh.onrender.com/callback
 - 如果 LRCLIB 有同步歌詞，App 會跟著 Spotify 播放進度高亮目前句子。
 - 每個瀏覽器都有自己的 Spotify 登入狀態，不同使用者不會互相覆蓋。
 - 預設使用免金鑰的 Google Translate 網路端點，不需要付費 API 額度。
-- 如果之後想改用 DeepSeek 或 OpenAI，可以把 `TRANSLATION_PROVIDER` 改成 `deepseek` 或 `openai`，再填對應 API key。
+- 如果之後想改用 Gemini、DeepSeek 或 OpenAI，可以把 `TRANSLATION_PROVIDER` 改成 `gemini`、`deepseek` 或 `openai`，再填對應 API key。
