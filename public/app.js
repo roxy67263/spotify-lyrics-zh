@@ -13,6 +13,7 @@ const els = {
   apiKeyInput: document.querySelector("#apiKeyInput"),
   modelInput: document.querySelector("#modelInput"),
   saveSettings: document.querySelector("#saveSettings"),
+  testSettings: document.querySelector("#testSettings"),
   settingsStatus: document.querySelector("#settingsStatus"),
   syncedLyrics: document.querySelector("#syncedLyrics"),
   source: document.querySelector("#source"),
@@ -61,6 +62,16 @@ function bindSettings() {
     };
     window.localStorage.setItem(settingsKey, JSON.stringify(settings));
     els.settingsStatus.textContent = "已儲存在這個瀏覽器。請重新整理或換歌後套用。";
+  });
+
+  els.testSettings.addEventListener("click", async () => {
+    els.settingsStatus.textContent = "正在測試...";
+    try {
+      const result = await getJson("/api/test-translation");
+      els.settingsStatus.textContent = `測試成功：${result.source} → ${result.text}`;
+    } catch (error) {
+      els.settingsStatus.textContent = `測試失敗：${error.message}`;
+    }
   });
 
   els.providerSelect.addEventListener("change", () => {
@@ -188,7 +199,9 @@ function renderLyrics(data) {
 
   const sourceParts = [data.lyrics.source];
   if (data.lyrics.translationSource) sourceParts.push(data.lyrics.translationSource);
-  if (data.translationError && !data.lyrics.translationSource) sourceParts.push("翻譯暫時失敗");
+  if (data.translationError && !data.lyrics.translationSource) {
+    sourceParts.push("翻譯失敗");
+  }
   if (data.lyrics.synced?.length) sourceParts.push("逐句同步");
   els.source.textContent = sourceParts.join(" · ");
 
@@ -203,11 +216,17 @@ function renderLyrics(data) {
         `,
       )
       .join("");
+    if (data.translationError) {
+      const errorLine = document.createElement("div");
+      errorLine.className = "translation-error";
+      errorLine.textContent = `翻譯失敗：${data.translationError}`;
+      els.syncedLyrics.prepend(errorLine);
+    }
     return;
   }
 
   if (data.translationError && !data.lyrics.translated) {
-    els.source.textContent = `${data.lyrics.source} · 翻譯暫時失敗`;
+    els.source.textContent = `${data.lyrics.source} · 翻譯失敗`;
   }
 
   const originalLines = (data.lyrics.original || "").split(/\r?\n/);
@@ -222,6 +241,13 @@ function renderLyrics(data) {
       `,
     )
     .join("");
+
+  if (data.translationError) {
+    els.syncedLyrics.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="translation-error">翻譯失敗：${escapeHtml(data.translationError)}</div>`,
+    );
+  }
 }
 
 function tickPlayback() {

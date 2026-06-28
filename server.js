@@ -66,6 +66,15 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (url.pathname === "/api/test-translation") {
+      const result = await translateLyrics("The night is still young", getRequestTranslationOptions(req));
+      return sendJson(res, {
+        ok: true,
+        source: result.source,
+        text: result.text,
+      });
+    }
+
     if (url.pathname === "/login") {
       if (!CLIENT_ID || !CLIENT_SECRET) {
         return sendJson(res, { error: "missing_spotify_credentials" }, 500);

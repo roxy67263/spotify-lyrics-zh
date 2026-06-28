@@ -179,7 +179,7 @@ h1 {
 
 .settings-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: end;
   padding: 0 18px 18px;
@@ -208,11 +208,27 @@ h1 {
   text-align: center;
 }
 
+.secondary-button {
+  background: #2b2e31;
+  color: var(--text);
+}
+
 .settings-status {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.translation-error {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 180, 168, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 180, 168, 0.08);
+  color: #ffb4a8;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .lyrics-card {
