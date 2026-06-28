@@ -274,9 +274,23 @@ async function getJson(url) {
   const response = await fetch(url, {
     headers: buildTranslationHeaders(),
   });
-  const data = await response.json();
+  const text = await response.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html")) {
+      throw new Error("伺服器回傳了網頁，不是資料。請重新整理，或回到首頁重新解鎖。");
+    }
+    throw new Error("伺服器回傳格式不正確，請稍後再試。");
+  }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/unlock";
+      throw new Error("需要重新解鎖。");
+    }
     throw new Error(data.message || data.error || `Request failed: ${response.status}`);
   }
 
