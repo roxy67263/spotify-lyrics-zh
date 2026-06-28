@@ -523,17 +523,6 @@ function parseSyncedLyrics(text) {
 }
 
 async function getBestTranslation(track, lyrics) {
-  const existing = await getNetEaseTranslation(track, lyrics);
-  if (existing?.text && existing.coverage >= 0.78) {
-    if (existing.coverage >= 0.96) return existing;
-
-    const machineText = await translateLyrics(lyrics.plainLyrics);
-    return {
-      text: mergeMissingTranslatedLines(existing.text, machineText),
-      source: `${existing.source} + missing lines filled`,
-    };
-  }
-
   return {
     text: await translateLyrics(lyrics.plainLyrics),
     source: getMachineTranslationSource(),
